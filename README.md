@@ -1,5 +1,5 @@
 Converts open COVID-19 dataset to rayyan compatible form.
 
 ```
-usage: python transform_to_rayyan.py <input_file.csv> <output_file.csv>
+usage: ./get_and_convert_data.sh <date_in_YYYY-MM-DD> <output_file_prefix>
 ```
