@@ -17,20 +17,20 @@
 
 USAGE = '''\
 Converts open COVID-19 dataset to rayyan compatible form
-usage: python transform_to_rayyan.py <input_file.csv> <output_file.csv>\
+usage: python transform_to_rayyan.py <input_file.csv> <output_file_prefix>\
 '''
 
 import csv
 import sys
 import ast
 import numpy
+import itertools
 
 import multiprocessing as mp
 
+from math import ceil
 from dateparser import parse as normalparse
 from daterangeparser import parse as rangeparse
-
-from tqdm import tqdm
 
 if len(sys.argv) != 3:
   print(USAGE)
@@ -38,6 +38,13 @@ if len(sys.argv) != 3:
   exit(1)
 
 #DX_DOI_PREFIX = 'http://dx.doi.org/'
+
+NUM_CORES = 8
+NUM_LINES_TO_PROCESS_PER_CHUNK = 300
+OUTPUT_FIELDS = ['title', 'abstract', 'url', 'pmc_id', 'pubmed_id', 'year', 'month', 'day', 'authors', 'journal', 'notes']
+
+INPUT_FILE = sys.argv[1]
+OUTPUT_PREFIX = sys.argv[2]
 
 def transform_row_to_rayyan(irow):
     orow = {}
@@ -99,48 +106,68 @@ def transform_row_to_rayyan(irow):
     orow['notes'] = '; '.join(notes)
     return orow
 
-def batch_tranform_to_rayyan(process_number, rows):
-  pbar = tqdm(desc="Process # %s" % process_number, total=len(rows), position=process_number)
-  output = []
+def worker(queue, name):
+  print('%s starting...' % name)
 
-  for r in rows:
-    output.append(transform_row_to_rayyan(r))
-    pbar.update()
+  while True:
+    item = queue.get()
 
-  pbar.close()
-  return output
+    if item is None:
+      # No more items, stop worker
+      print('%s is done, shutting down...' % name)
+      queue.task_done()
+      break
 
-NUM_CORES = 8
+    # Process input chunk
+    input_index = item
+    print('%s: processing chunk %s' % (name, input_index))
+    input_csv = csv.DictReader(open(INPUT_FILE, 'r', encoding='utf-8', errors='ignore'), delimiter=',')
 
-OUTPUT_FIELDS = ['title', 'abstract', 'url', 'pmc_id', 'pubmed_id', 'year', 'month', 'day', 'authors', 'journal', 'notes']
+    line_to_start = input_index * NUM_LINES_TO_PROCESS_PER_CHUNK
+    line_to_stop = (input_index + 1) * NUM_LINES_TO_PROCESS_PER_CHUNK
+
+    # Write to output
+    with open(OUTPUT_PREFIX + str(input_index) + '.csv', "w+") as output_file:
+      output_csv = csv.DictWriter(output_file, delimiter=',', fieldnames=OUTPUT_FIELDS)
+      output_csv.writerow(dict((field, field) for field in OUTPUT_FIELDS)) # Write header
+
+      for line in itertools.islice(input_csv, line_to_start, line_to_stop):
+        output_csv.writerow(transform_row_to_rayyan(line))
+
+    queue.task_done()
 
 if __name__ == "__main__":
-  input_csv = csv.DictReader(open(sys.argv[1], 'r', encoding='utf-8', errors='ignore'), delimiter=',')
-  output_csv = csv.DictWriter(open(sys.argv[2], "w+"), delimiter=',', fieldnames=OUTPUT_FIELDS)
+  input_csv = csv.DictReader(open(INPUT_FILE, 'r', encoding='utf-8', errors='ignore'), delimiter=',')
 
-  output_csv.writerow(dict((fn, fn) for fn in OUTPUT_FIELDS))
+  # Get the number of lines in the input csv to distribute work across cores.
+  # This does it without reading the whole thing into memory.
+  total_input_lines = sum(1 for row in input_csv)
+  num_output_files =  ceil(total_input_lines / NUM_LINES_TO_PROCESS_PER_CHUNK)
 
-  # Gather all rows into memory
-  all_input_rows = [input_row for input_row in input_csv]
+  print('Number of output files that will be created: %s' % num_output_files)
 
-  # Split rows into NUM_CORES chunks for parallel processing
-  input_chunks = numpy.array_split(numpy.array(all_input_rows), NUM_CORES)
-  input_chunks_with_index = [(index, chunk) for index, chunk in enumerate(input_chunks)]
+  # Create a queue with the indices of the chunk of the input file to process.
+  work_queue = mp.JoinableQueue()
+  for output_index in range(num_output_files):
+    work_queue.put(output_index)
 
-  # Create pool of workers
-  pool = mp.Pool(initializer=tqdm.set_lock, initargs=(tqdm.get_lock(),), processes=NUM_CORES)
+  procs = []
+  # Create worker processes
+  for i in range(NUM_CORES):
+    proc = mp.Process(target=worker, args=(work_queue, 'worker_' + str(i)))
+    proc.daemon = True
+    proc.start()
+    procs.append(proc)
 
-  # Apply transformation in parallel
-  print("Starting transformation with %s workers..." % NUM_CORES)
-  output_chunks = pool.starmap(batch_tranform_to_rayyan, input_chunks_with_index)
+  work_queue.join()
 
-  # Wrap up workers
-  pool.close()
-  pool.join()
+  for proc in procs:
+    # Send a sentinel to terminate worker
+    work_queue.put(None)
 
-  # Write output to file
-  for chunk in output_chunks:
-    for row in chunk:
-      output_csv.writerow(row)
+  work_queue.join()
+
+  for proc in procs:
+    proc.join()
 
   print("Complete.")
