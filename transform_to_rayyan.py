@@ -40,7 +40,7 @@ if len(sys.argv) != 3:
 #DX_DOI_PREFIX = 'http://dx.doi.org/'
 
 NUM_CORES = 8
-NUM_LINES_TO_PROCESS_PER_CHUNK = 300
+NUM_LINES_TO_PROCESS_PER_CHUNK = 50000
 OUTPUT_FIELDS = ['title', 'abstract', 'url', 'pmc_id', 'pubmed_id', 'year', 'month', 'day', 'authors', 'journal', 'notes']
 
 INPUT_FILE = sys.argv[1]
