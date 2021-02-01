@@ -4,6 +4,16 @@
 # Changes based on 202003207 release
 # Change has_full_text --> has_pdf_parse
 # Add has_pmc_xml_parse and cord_uid to notes
+# Changes based on 20200519 release
+# +s2_id column
+# Changes based on 20200512 release
+#+mag_id,who_covidence_id,pdf_json_files,pmc_json_files
+#-Microsoft Academic Paper ID,WHO #Covidence,has_pdf_parse,has_pmc_xml_parse,full_text_file
+# Changes based on 202003207 release
+# Need to write something here ...
+# Changes based on 202003207 release
+# Change has_full_text --> has_pdf_parse
+# Add has_pmc_xml_parse and cord_uid to notes
 
 USAGE = '''\
 Converts open COVID-19 dataset to rayyan compatible form
@@ -83,7 +93,7 @@ def transform_row_to_rayyan(irow):
     orow['journal'] = irow['journal']
 
     notes = []
-    for col in ['cord_uid', 'sha', 'doi', 'source_x', 'license', 'Microsoft Academic Paper ID', 'WHO #Covidence', 'has_pdf_parse', 'has_pmc_xml_parse', 'full_text_file']:
+    for col in ['cord_uid', 'sha', 'doi', 'source_x', 'license', 'mag_id', 'who_covidence_id', 'pdf_json_files','pmc_json_files','s2_id']:
       notes.append(col + ': ' + irow[col])
 
     orow['notes'] = '; '.join(notes)
