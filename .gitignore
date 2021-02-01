@@ -1,4 +1,2 @@
+*.tar.gz
 *.csv
-*.csv#
-*.code-workspace
-.vscode/
